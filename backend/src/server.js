@@ -1,40 +1,39 @@
-// server.js — mini backend "meia meia meia" (Prova SAEP)
+// server.js — Backend para SAEP Mercado
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 
 const app = express();
+
+// Configuração do Banco de Dados
+// Certifique-se de que o banco 'saep_db' existe e as credenciais estão corretas
 const pool = new Pool({
   user: 'postgres',
   password: 'senai',
   host: 'localhost',
   port: 5432,
-  database: 'saep_db',
+  database: 'saep_db', // Se você criou um banco com outro nome, altere aqui
 });
 
 app.use(cors());
 app.use(express.json());
 
-// utils
+// --- UTILS ---
 const ok = (res, data) => res.json(data);
 const fail = (res, err, code = 500) => {
   console.error(err);
   res.status(code).json({ error: typeof err === 'string' ? err : 'Erro interno' });
 };
 
-// -----------------------------
-// HEALTHCHECK
-// -----------------------------
+// --- HEALTHCHECK ---
 app.get('/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
-    ok(res, { status: 'ok' });
+    ok(res, { status: 'ok', system: 'Saep Mercado API' });
   } catch (e) { fail(res, e); }
 });
 
-// -----------------------------
-// USUÁRIOS
-// -----------------------------
+// --- USUÁRIOS (Equipe do Mercado) ---
 app.post('/usuarios', async (req, res) => {
   const { nome, email, senha } = req.body || {};
   if (!nome || !email || !senha) return fail(res, 'Campos obrigatórios: nome, email, senha', 400);
@@ -65,12 +64,11 @@ app.post('/auth/login', async (req, res) => {
   } catch (e) { fail(res, e); }
 });
 
-// -----------------------------
-// PRODUTOS
-// -----------------------------
+// --- PRODUTOS (Estoque do Mercado) ---
 app.get('/produtos', async (req, res) => {
   const q = (req.query.q || '').trim();
   const hasQ = q.length > 0;
+  // Traz produtos e flag se está abaixo do mínimo
   const sql = `
     SELECT id_produto AS id, nome, quantidade, estoque_minimo,
            (quantidade < estoque_minimo) AS abaixo_do_minimo
@@ -140,17 +138,17 @@ app.delete('/produtos/:id', async (req, res) => {
   } catch (e) { fail(res, e); }
 });
 
-// -----------------------------
-// MOVIMENTAÇÕES
-// -----------------------------
+// --- MOVIMENTAÇÕES (Entrada/Saída de Estoque) ---
 app.post('/movimentacoes', async (req, res) => {
   const { produto_id, usuario_id, tipo, quantidade, data_movimentacao, observacao } = req.body || {};
+  
   if (!produto_id || !usuario_id || !tipo || !quantidade)
     return fail(res, 'Campos obrigatórios: produto_id, usuario_id, tipo, quantidade', 400);
 
   if (!['entrada', 'saida'].includes(String(tipo).toLowerCase()))
     return fail(res, "tipo deve ser 'entrada' ou 'saida'", 400);
 
+  // Define se soma ou subtrai do estoque
   const delta = String(tipo).toLowerCase() === 'entrada'
     ? +Math.abs(quantidade)
     : -Math.abs(quantidade);
@@ -159,7 +157,7 @@ app.post('/movimentacoes', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // atualiza produto
+    // 1. Atualiza a quantidade na tabela produtos
     const up = await client.query(
       `UPDATE produtos
           SET quantidade = quantidade + $1
@@ -173,7 +171,7 @@ app.post('/movimentacoes', async (req, res) => {
       return fail(res, 'Produto não encontrado', 404);
     }
 
-    // registra movimentação
+    // 2. Registra o histórico na tabela movimentacoes
     const ins = await client.query(
       `INSERT INTO movimentacoes (produto_id, usuario_id, tipo, quantidade, data_movimentacao, observacao)
        VALUES ($1,$2,$3,$4,COALESCE($5, NOW()),$6)
@@ -201,6 +199,8 @@ app.post('/movimentacoes', async (req, res) => {
 app.get('/movimentacoes', async (req, res) => {
   const { produto_id } = req.query;
   const hasFilter = !!produto_id;
+  
+  // Join para trazer o nome do Produto e do Responsável (Usuário)
   const sql = `
     SELECT m.id_movimentacao AS id,
            m.produto_id,
@@ -223,8 +223,6 @@ app.get('/movimentacoes', async (req, res) => {
   } catch (e) { fail(res, e); }
 });
 
-// -----------------------------
-// START
-// -----------------------------
+// --- INICIALIZAÇÃO ---
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
+app.listen(PORT, () => console.log(`Servidor Mercado rodando na porta ${PORT}`));

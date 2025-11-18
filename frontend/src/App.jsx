@@ -1,15 +1,14 @@
-// App.jsx — SPA mínima "meia meia meia" (React + axios)
-// Entregas: 4 (login), 5 (principal), 6 (cadastro produto), 7 (gestão de estoque)
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import "./App.css";
+import "./app.css"
 
+// Configuração da API
 const API = axios.create({
   baseURL: "http://localhost:3000",
   timeout: 8000,
 });
 
-// util
+// --- UTILS ---
 const notEmpty = (v) => String(v ?? "").trim().length > 0;
 const toInt = (v, def = 0) => {
   const n = Number(v);
@@ -17,22 +16,18 @@ const toInt = (v, def = 0) => {
 };
 
 export default function App() {
-  // -------------------------------
-  // estado global simples
-  // -------------------------------
+  // --- ESTADO GLOBAL ---
   const [view, setView] = useState("login"); // 'login' | 'home' | 'produtos' | 'estoque'
   const [user, setUser] = useState(null); // {id, nome, email}
 
-  // -------------------------------
-  // login (4)
-  // -------------------------------
+  // --- LOGIN ---
   const [loginEmail, setLoginEmail] = useState("");
   const [loginSenha, setLoginSenha] = useState("");
+
   const doLogin = async (e) => {
     e?.preventDefault();
     if (!notEmpty(loginEmail) || !notEmpty(loginSenha)) {
-      alert("Informe email e senha.");
-      return;
+      return alert("Informe email e senha.");
     }
     try {
       const { data } = await API.post("/auth/login", {
@@ -53,14 +48,12 @@ export default function App() {
     setView("login");
   };
 
-  // -------------------------------
-  // produtos (6) + uso em estoque (7)
-  // -------------------------------
+  // --- PRODUTOS & ESTOQUE ---
   const [produtos, setProdutos] = useState([]);
   const [loadingProdutos, setLoadingProdutos] = useState(false);
   const [q, setQ] = useState(""); // busca
 
-  // form produto
+  // Form Produto
   const emptyProduto = { id: null, nome: "", quantidade: 0, estoque_minimo: 0 };
   const [produtoForm, setProdutoForm] = useState(emptyProduto);
   const [editandoId, setEditandoId] = useState(null);
@@ -72,7 +65,7 @@ export default function App() {
       const { data } = await API.get(url);
       setProdutos(Array.isArray(data) ? data : []);
     } catch (e) {
-      alert("Erro ao carregar produtos");
+      alert("Erro ao carregar estoque do mercado");
     } finally {
       setLoadingProdutos(false);
     }
@@ -84,7 +77,6 @@ export default function App() {
   }, [view]);
 
   const produtosOrdenados = useMemo(() => {
-    // 7.1.1 — ordem alfabética no FRONT (não confiar na ordenação do backend)
     return [...produtos].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
   }, [produtos]);
 
@@ -99,7 +91,6 @@ export default function App() {
     if (toInt(quantidade) < 0) return "Quantidade não pode ser negativa.";
     if (toInt(estoque_minimo) < 0) return "Estoque mínimo não pode ser negativo.";
     return null;
-    // 6.1.6 — validações mínimas
   };
 
   const criarProduto = async () => {
@@ -113,6 +104,7 @@ export default function App() {
       });
       await carregarProdutos();
       limparProdutoForm();
+      alert("Produto cadastrado com sucesso!");
     } catch (e) {
       alert(e?.response?.data?.error || "Erro ao criar produto");
     }
@@ -140,17 +132,17 @@ export default function App() {
       });
       await carregarProdutos();
       limparProdutoForm();
+      alert("Produto atualizado!");
     } catch (e) {
       alert(e?.response?.data?.error || "Erro ao salvar produto");
     }
   };
 
   const excluirProduto = async (id) => {
-    if (!window.confirm("Excluir este produto?")) return;
+    if (!window.confirm("Tem certeza que deseja remover este item do catálogo?")) return;
     try {
       await API.delete(`/produtos/${id}`);
       await carregarProdutos();
-      // 6.1.5 — excluir
     } catch (e) {
       alert(e?.response?.data?.error || "Erro ao excluir produto");
     }
@@ -159,24 +151,20 @@ export default function App() {
   const buscar = async (e) => {
     e?.preventDefault();
     await carregarProdutos(q);
-    // 6.1.2 — busca atualiza a listagem
   };
 
-  // -------------------------------
-  // gestão de estoque (7)
-  // -------------------------------
+  // --- GESTÃO DE ESTOQUE (MOVIMENTAÇÕES) ---
   const [movProdutoId, setMovProdutoId] = useState("");
   const [movTipo, setMovTipo] = useState("entrada"); // entrada|saida
   const [movQuantidade, setMovQuantidade] = useState("");
-  const [movData, setMovData] = useState(""); // date (yyyy-mm-dd)
+  const [movData, setMovData] = useState("");
   const [movObs, setMovObs] = useState("");
 
   const enviarMovimentacao = async () => {
     if (!user) return alert("Faça login.");
     if (!movProdutoId) return alert("Selecione um produto.");
-    if (!["entrada", "saida"].includes(movTipo)) return alert("Tipo inválido.");
     const qtd = toInt(movQuantidade);
-    if (!(qtd > 0)) return alert("Informe uma quantidade > 0.");
+    if (!(qtd > 0)) return alert("Informe uma quantidade maior que zero.");
 
     try {
       const payload = {
@@ -184,257 +172,279 @@ export default function App() {
         usuario_id: user.id,
         tipo: movTipo,
         quantidade: qtd,
-        data_movimentacao: notEmpty(movData) ? new Date(movData).toISOString() : null, // 7.1.3
+        data_movimentacao: notEmpty(movData) ? new Date(movData).toISOString() : null,
         observacao: notEmpty(movObs) ? movObs.trim() : null,
       };
       const { data } = await API.post("/movimentacoes", payload);
-      // data.produto.abaxo_do_minimo (do backend)
-      alert("Movimentação registrada com sucesso.");
+      
+      let msg = "Movimentação registrada.";
+      if (movTipo === 'entrada') msg = "Estoque reabastecido.";
+      if (movTipo === 'saida') msg = "Venda/Saída registrada.";
+      
       if (data?.produto?.abaixo_do_minimo) {
-        alert("⚠️ Estoque abaixo do mínimo para este produto!");
+        msg += "\n⚠️ ATENÇÃO: Estoque abaixo do mínimo!";
       }
-      // atualizar listagem para refletir novo saldo
+      alert(msg);
+      
       await carregarProdutos();
-      // limpar form
       setMovQuantidade("");
       setMovObs("");
-      // manter produto/tipo/data para facilitar uso contínuo
     } catch (e) {
       alert(e?.response?.data?.error || "Erro ao registrar movimentação");
     }
   };
 
-  // -------------------------------
-  // Render
-  // -------------------------------
+  // --- RENDER ---
   return (
-    <div className="app-container">
-      
-
-      {/* LOGIN (4) */}
-      {view === "login" && (
-        <section className="form" aria-label="login">
-          <h2>Login</h2>
-          <div className="input-container">
-            <label>Email</label>
-            <input
-              type="email"
-              value={loginEmail}
-              onChange={(e) => setLoginEmail(e.target.value)}
-              placeholder="ana@example.com"
-              required
-            />
-          </div>
-          <div className="input-container">
-            <label>Senha</label>
-            <input
-              type="password"
-              value={loginSenha}
-              onChange={(e) => setLoginSenha(e.target.value)}
-              placeholder="•••••••"
-              required
-            />
-          </div>
-          <button onClick={doLogin}>Entrar</button>
-        </section>
-      )}
-
-      {/* HOME (5) */}
-      {view === "home" && (
-        <section className="form" aria-label="home">
-          <h2>Olá, {user?.nome}</h2>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={() => setView("produtos")}>Cadastro de Produto</button>
-            <button onClick={() => setView("estoque")}>Gestão de Estoque</button>
-            <button onClick={logout}>Sair</button>
-          </div>
-        </section>
-      )}
-
-      {/* CADASTRO DE PRODUTO (6) */}
-      {view === "produtos" && (
-        <section className="form" aria-label="produtos">
-          <h2>Cadastro de Produto</h2>
-
-          {/* busca (6.1.2) */}
-          <form onSubmit={buscar} style={{ width: "100%", display: "flex", gap: 8 }}>
-            <input
-              type="text"
-              placeholder="Buscar por nome (ex.: arrastão)"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-            <button type="submit">Buscar</button>
-            <button type="button" onClick={() => { setQ(""); carregarProdutos(""); }}>
-              Limpar
-            </button>
-          </form>
-
-          {/* form criar/editar (6.1.3–6.1.4–6.1.6) */}
-          <div style={{ width: "100%", display: "grid", gap: 8 }}>
+    <>
+      <div className="app-container">
+        
+        {/* LOGIN */}
+        {view === "login" && (
+          <section className="form" aria-label="login">
+            <h2>🛒 Mercado SAEP - Acesso</h2>
             <div className="input-container">
-              <label>Nome</label>
+              <label>Email Corporativo</label>
               <input
-                type="text"
-                value={produtoForm.nome}
-                onChange={(e) => setProdutoForm((s) => ({ ...s, nome: e.target.value }))}
-                placeholder='ex.: "meia meia meia arrastão"'
+                type="email"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                placeholder="gerente@mercado.com"
                 required
               />
             </div>
             <div className="input-container">
-              <label>Quantidade</label>
+              <label>Senha</label>
               <input
-                type="number"
-                value={produtoForm.quantidade}
-                onChange={(e) => setProdutoForm((s) => ({ ...s, quantidade: e.target.value }))}
-                min={0}
+                type="password"
+                value={loginSenha}
+                onChange={(e) => setLoginSenha(e.target.value)}
+                placeholder="•••••••"
+                required
               />
             </div>
-            <div className="input-container">
-              <label>Estoque mínimo</label>
+            <button onClick={doLogin}>Acessar Sistema</button>
+          </section>
+        )}
+
+        {/* HOME / DASHBOARD */}
+        {view === "home" && (
+          <section className="form" aria-label="home">
+            <h2>Bem-vindo(a), {user?.nome}!</h2>
+            <p style={{textAlign: 'center', color: '#666'}}>O que deseja fazer hoje?</p>
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: '1fr 1fr' }}>
+              <button onClick={() => setView("produtos")}>📋 Catálogo de Produtos</button>
+              <button onClick={() => setView("estoque")}>📦 Entrada/Saída (Caixa)</button>
+            </div>
+            <button className="btn-outline" onClick={logout} >Sair do Sistema</button>
+          </section>
+        )}
+
+        {/* CADASTRO DE PRODUTOS */}
+        {view === "produtos" && (
+          <section className="form" aria-label="produtos" >
+            <h2>Gerenciar Catálogo</h2>
+
+            {/* Busca */}
+            <form onSubmit={buscar} >
               <input
-                type="number"
-                value={produtoForm.estoque_minimo}
-                onChange={(e) => setProdutoForm((s) => ({ ...s, estoque_minimo: e.target.value }))}
-                min={0}
+                type="text"
+                placeholder="Buscar item (ex.: Detergente, Arroz)"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
               />
-            </div>
+              <button type="submit">Buscar</button>
+              <button type="button" className="btn-outline" onClick={() => { setQ(""); carregarProdutos(""); }}>
+                Limpar
+              </button>
+            </form>
 
-            <div style={{ display: "flex", gap: 8 }}>
-              {editandoId ? (
-                <>
-                  <button type="button" onClick={salvarProduto}>Salvar alterações</button>
-                  <button type="button" onClick={limparProdutoForm}>Cancelar</button>
-                </>
-              ) : (
-                <button type="button" onClick={criarProduto}>Cadastrar produto</button>
-              )}
-              <button type="button" onClick={() => setView("home")}>Voltar</button>
-            </div>
-          </div>
-
-          {/* listagem (6.1.1) — em tabela; (6.1.5) excluir; editar */}
-          <div style={{ width: "100%", marginTop: 10 }}>
-            {loadingProdutos && <p>Carregando...</p>}
-            {!loadingProdutos && (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left" }}>Nome</th>
-                    <th>Qtd</th>
-                    <th>Mín</th>
-                    <th>Alerta</th>
-                    <th>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {produtosOrdenados.map((p) => (
-                    <tr key={p.id}>
-                      <td>{p.nome}</td>
-                      <td style={{ textAlign: "center" }}>{p.quantidade}</td>
-                      <td style={{ textAlign: "center" }}>{p.estoque_minimo}</td>
-                      <td style={{ textAlign: "center" }}>
-                        {p.quantidade < p.estoque_minimo ? "⚠️" : "—"}
-                      </td>
-                      <td style={{ display: "flex", gap: 6, justifyContent: "center" }}>
-                        <button className="button-editar" onClick={() => iniciarEdicao(p)}>Editar</button>
-                        <button className="button-excluir" onClick={() => excluirProduto(p.id)}>Excluir</button>
-                      </td>
-                    </tr>
-                  ))}
-                  {produtosOrdenados.length === 0 && (
-                    <tr><td colSpan={5}>Nenhum produto.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* GESTÃO DE ESTOQUE (7) */}
-      {view === "estoque" && (
-        <section className="form" aria-label="estoque">
-          <h2>Gestão de Estoque</h2>
-
-          {/* listagem alfabética (7.1.1) */}
-          <div style={{ width: "100%" }}>
-            <h3>Produtos (ordem alfabética)</h3>
-            <ul style={{ listStyle: "none", paddingLeft: 0 }}>
-              {produtosOrdenados.map((p) => (
-                <li key={p.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <span style={{ width: "50%" }}>{p.nome}</span>
-                  <span>Qtd: <b>{p.quantidade}</b></span>
-                  <span>Mín: <b>{p.estoque_minimo}</b></span>
-                  <span>{p.quantidade < p.estoque_minimo ? "⚠️ Baixo" : ""}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* formulário de movimentação (7.1.2–7.1.3–7.1.4) */}
-          <div style={{ width: "100%", marginTop: 10 }}>
-            <h3>Registrar movimentação</h3>
-            <div className="input-container">
-              <label>Produto</label>
-              <select
-                value={movProdutoId}
-                onChange={(e) => setMovProdutoId(e.target.value)}
-                style={{ width: "100%", padding: 10, borderRadius: 5, border: "1px solid #ccc" }}
-              >
-                <option value="">Selecione...</option>
-                {produtosOrdenados.map((p) => (
-                  <option key={p.id} value={p.id}>{p.nome}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="input-container">
-              <label>Tipo</label>
-              <div style={{ display: "flex", gap: 10 }}>
-                <label><input type="radio" name="tipo" value="entrada" checked={movTipo === "entrada"} onChange={(e) => setMovTipo(e.target.value)} /> Entrada</label>
-                <label><input type="radio" name="tipo" value="saida" checked={movTipo === "saida"} onChange={(e) => setMovTipo(e.target.value)} /> Saída</label>
+            {/* Formulário */}
+            <div style={{ border: '1px solid #eee', padding: 15, borderRadius: 8, marginTop: 10 }}>
+              <h3 style={{fontSize: '1.1rem', marginTop: 0}}>
+                {editandoId ? "Editar Item" : "Novo Item"}
+              </h3>
+              <div style={{ display: "grid", gap: 10, gridTemplateColumns: '2fr 1fr 1fr' }}>
+                <div className="input-container">
+                  <label>Nome do Produto</label>
+                  <input
+                    type="text"
+                    value={produtoForm.nome}
+                    onChange={(e) => setProdutoForm((s) => ({ ...s, nome: e.target.value }))}
+                    placeholder='Ex.: Feijão Carioca 1kg'
+                  />
+                </div>
+                <div className="input-container">
+                  <label>Qtd Atual</label>
+                  <input
+                    type="number"
+                    value={produtoForm.quantidade}
+                    onChange={(e) => setProdutoForm((s) => ({ ...s, quantidade: e.target.value }))}
+                    min={0}
+                  />
+                </div>
+                <div className="input-container">
+                  <label>Estoque Mín.</label>
+                  <input
+                    type="number"
+                    value={produtoForm.estoque_minimo}
+                    onChange={(e) => setProdutoForm((s) => ({ ...s, estoque_minimo: e.target.value }))}
+                    min={0}
+                  />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
+                {editandoId ? (
+                  <>
+                    <button type="button" onClick={salvarProduto}>Salvar Alterações</button>
+                    <button type="button" className="btn-outline" onClick={limparProdutoForm}>Cancelar</button>
+                  </>
+                ) : (
+                  <button type="button" onClick={criarProduto}>Cadastrar</button>
+                )}
               </div>
             </div>
 
-            <div className="input-container">
-              <label>Quantidade</label>
-              <input
-                type="number"
-                min={1}
-                value={movQuantidade}
-                onChange={(e) => setMovQuantidade(e.target.value)}
-                placeholder="Ex.: 5"
-              />
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+               <button type="button" className="btn-outline" onClick={() => setView("home")}>Voltar ao Menu</button>
             </div>
 
-            <div className="input-container">
-              <label>Data da movimentação</label>
-              <input
-                type="date"
-                value={movData}
-                onChange={(e) => setMovData(e.target.value)}
-              />
+            {/* Tabela */}
+            <div style={{ width: "100%", overflowX: 'auto' }}>
+              {loadingProdutos && <p>Atualizando catálogo...</p>}
+              {!loadingProdutos && (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Produto</th>
+                      <th style={{textAlign: 'center'}}>Em Loja</th>
+                      <th style={{textAlign: 'center'}}>Mínimo</th>
+                      <th style={{textAlign: 'center'}}>Status</th>
+                      <th style={{textAlign: 'center'}}>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {produtosOrdenados.map((p) => (
+                      <tr key={p.id}>
+                        <td>{p.nome}</td>
+                        <td style={{ textAlign: "center", fontWeight: 'bold' }}>{p.quantidade}</td>
+                        <td style={{ textAlign: "center", color: '#777' }}>{p.estoque_minimo}</td>
+                        <td style={{ textAlign: "center" }}>
+                          {p.quantidade < p.estoque_minimo ? (
+                            <span className="estoque-baixo">Repor!</span>
+                          ) : (
+                            <span className="estoque-ok">OK</span>
+                          )}
+                        </td>
+                        <td style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                          <button className="btn-editar" onClick={() => iniciarEdicao(p)} title="Editar">✏️</button>
+                          <button className="btn-excluir" onClick={() => excluirProduto(p.id)} title="Excluir">🗑️</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {produtosOrdenados.length === 0 && (
+                      <tr><td colSpan={5} style={{textAlign: 'center', padding: 20}}>Nenhum produto encontrado.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* GESTÃO DE ESTOQUE */}
+        {view === "estoque" && (
+          <section className="form" aria-label="estoque">
+            <h2>Caixa / Reposição</h2>
+
+            {/* Formulário de Movimentação */}
+            <div style={{ backgroundColor: '#f1f2f6', padding: 15, borderRadius: 8 }}>
+              <h3 style={{marginTop: 0, fontSize: '1rem'}}>Registrar Operação</h3>
+              
+              <div className="input-container">
+                <label>Produto</label>
+                <select
+                  value={movProdutoId}
+                  onChange={(e) => setMovProdutoId(e.target.value)}
+                >
+                  <option value="">Selecione o item...</option>
+                  {produtosOrdenados.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome} (Atual: {p.quantidade})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="input-container">
+                <label>Tipo de Operação</label>
+                <div style={{ display: "flex", gap: 20, padding: '10px 0' }}>
+                  <label style={{cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5}}>
+                    <input type="radio" name="tipo" value="entrada" checked={movTipo === "entrada"} onChange={(e) => setMovTipo(e.target.value)} style={{width: 'auto'}} /> 
+                    📥 Entrada (Reposição)
+                  </label>
+                  <label style={{cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5}}>
+                    <input type="radio" name="tipo" value="saida" checked={movTipo === "saida"} onChange={(e) => setMovTipo(e.target.value)} style={{width: 'auto'}} /> 
+                    📤 Saída (Venda)
+                  </label>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="input-container">
+                  <label>Quantidade</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={movQuantidade}
+                    onChange={(e) => setMovQuantidade(e.target.value)}
+                    placeholder="Qtd"
+                  />
+                </div>
+                <div className="input-container">
+                  <label>Data</label>
+                  <input
+                    type="date"
+                    value={movData}
+                    onChange={(e) => setMovData(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="input-container">
+                <label>Observação</label>
+                <input
+                  type="text"
+                  value={movObs}
+                  onChange={(e) => setMovObs(e.target.value)}
+                  placeholder="Ex.: NF 1020 ou Venda Balcão"
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 8, marginTop: 15 }}>
+                <button type="button" onClick={enviarMovimentacao} style={{flex: 1}}>Confirmar</button>
+                <button type="button" className="btn-outline" onClick={() => setView("home")}>Cancelar</button>
+              </div>
             </div>
 
-            <div className="input-container">
-              <label>Observação (opcional)</label>
-              <input
-                type="text"
-                value={movObs}
-                onChange={(e) => setMovObs(e.target.value)}
-                placeholder="Ex.: retirada para feira"
-              />
+            {/* Resumo Rápido */}
+            <div style={{ width: "100%", marginTop: 20 }}>
+              <h3>Níveis de Estoque Críticos</h3>
+              <ul>
+                {produtosOrdenados.filter(p => p.quantidade < p.estoque_minimo).map((p) => (
+                  <li key={p.id}>
+                    <span>🚨 <b>{p.nome}</b></span>
+                    <span>Restam: <b>{p.quantidade}</b> (Mín: {p.estoque_minimo})</span>
+                  </li>
+                ))}
+                {produtosOrdenados.filter(p => p.quantidade < p.estoque_minimo).length === 0 && (
+                   <li style={{color: 'green', justifyContent: 'center'}}>Tudo certo! Nenhum produto com estoque baixo.</li>
+                )}
+              </ul>
             </div>
-
-            <div style={{ display: "flex", gap: 8 }}>
-              <button type="button" onClick={enviarMovimentacao}>Registrar</button>
-              <button type="button" onClick={() => setView("home")}>Voltar</button>
-            </div>
-          </div>
-        </section>
-      )}
-    </div>
+          </section>
+        )}
+      </div>
+    </>
   );
 }
